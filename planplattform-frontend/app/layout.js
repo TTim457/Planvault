@@ -10,7 +10,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="de">
-      <body className="font-sans min-h-screen bg-red-200 text-gray-800">
+      <body className="font-sans min-h-screen bg-gray-50 text-gray-800">
         {/* Sticky Header */}
         <header className="sticky top-0 z-50">
           <Header />
