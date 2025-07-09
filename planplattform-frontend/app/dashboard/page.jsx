@@ -10,22 +10,17 @@ export default function Dashboard() {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (!token) {
-      router.push('/login');
-      return;
-    }
+    if (!token) return router.push('/login');
 
     const fetchUser = async () => {
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-
-        if (!res.ok) throw new Error('Token ungültig oder abgelaufen');
-        const data = await res.json();
-        setUser(data.user);
-      } catch (err) {
-        console.error('[User Fetch Error]', err);
+        if (!res.ok) throw new Error();
+        const { user } = await res.json();
+        setUser(user);
+      } catch {
         localStorage.removeItem('token');
         router.push('/login');
       }
@@ -36,16 +31,11 @@ export default function Dashboard() {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard-data`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-
-        if (!res.ok) {
-          console.warn('[Dashboard-Daten konnten nicht geladen werden]');
-          return;
-        }
-
+        if (!res.ok) return;
         const data = await res.json();
         setDashboardData(data);
-      } catch (err) {
-        console.error('[Dashboard Fetch Error]', err);
+      } catch {
+        console.error('Dashboard Fetch Error');
       }
     };
 
@@ -53,46 +43,45 @@ export default function Dashboard() {
   }, [router]);
 
   if (!user) {
-    return <p>{message || 'Lade Dashboard...'}</p>;
+    return <p className="p-8 text-gray-600">Lade Dashboard…</p>;
   }
 
   return (
-    <div style={{ padding: '2rem' }}>
-      <h1>Willkommen zurück, {user.first_name} 👋</h1>
-      <p>Deine E-Mail: {user.email}</p>
+    <div className="bg-gray-50 min-h-screen p-8 space-y-6">
+      <h1 className="text-3xl font-bold text-gray-800">Willkommen zurück, {user.first_name} 👋</h1>
+      <p className="text-gray-600">Deine E-Mail: {user.email}</p>
 
       {dashboardData ? (
         <>
-          <hr style={{ margin: '2rem 0' }} />
+          <hr className="my-6 border-gray-200" />
+          <section className="bg-white p-6 rounded-2xl shadow">
+            <h2 className="text-xl font-semibold text-gray-700 mb-4">🛍️ Deine gekauften Pläne</h2>
+            {dashboardData.purchases.length > 0 ? (
+              <ul className="space-y-2 text-gray-700">
+                {dashboardData.purchases.map((p, i) => (
+                  <li key={i}>📦 {p.title} – gekauft am {new Date(p.paid_at).toLocaleDateString()}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-gray-600">Du hast noch keine Pläne gekauft.</p>
+            )}
+          </section>
 
-          <h2>🛍️ Deine gekauften Pläne</h2>
-          {dashboardData.purchases.length > 0 ? (
-            <ul>
-              {dashboardData.purchases.map((purchase, index) => (
-                <li key={index}>
-                  📦 {purchase.title} – gekauft am{' '}
-                  {new Date(purchase.paid_at).toLocaleDateString()}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>Du hast noch keine Pläne gekauft.</p>
-          )}
-
-          <hr style={{ margin: '2rem 0' }} />
-
-          <h2>⬇️ Letzter Download</h2>
-          {dashboardData.lastDownload ? (
-            <p>
-              {dashboardData.lastDownload.title} – am{' '}
-              {new Date(dashboardData.lastDownload.downloaded_at).toLocaleString()}
-            </p>
-          ) : (
-            <p>Du hast noch keinen Download durchgeführt.</p>
-          )}
+          <hr className="my-6 border-gray-200" />
+          <section className="bg-white p-6 rounded-2xl shadow">
+            <h2 className="text-xl font-semibold text-gray-700 mb-4">⬇️ Letzter Download</h2>
+            {dashboardData.lastDownload ? (
+              <p className="text-gray-700">
+                {dashboardData.lastDownload.title} – am{' '}
+                {new Date(dashboardData.lastDownload.downloaded_at).toLocaleString()}
+              </p>
+            ) : (
+              <p className="text-gray-600">Du hast noch keinen Download durchgeführt.</p>
+            )}
+          </section>
         </>
       ) : (
-        <p>Lade deine Inhalte...</p>
+        <p className="text-gray-600">Lade deine Inhalte…</p>
       )}
     </div>
   );
