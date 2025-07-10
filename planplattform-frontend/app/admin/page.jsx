@@ -9,7 +9,7 @@ import {
   BarChart
 } from 'lucide-react';
 
-// Spalten-Definitionen
+// Spalten-Definitionen mit den neuen Feldern
 const columnsConfig = {
   users: [
     { key: 'id',         label: 'ID',        editable: false },
@@ -30,16 +30,19 @@ const columnsConfig = {
     { key: 'user_id',       label: 'User-ID',   editable: false },
     { key: 'photo_id',      label: 'Foto-ID',   editable: false },
     { key: 'downloaded_at', label: 'Geladen',   editable: false },
-    { key: 'bezahlt',       label: 'Bezahlt',   editable: true  }
+    { key: 'bezahlt',       label: 'Bezahlt',   editable: true  },
+    { key: 'purchase_type', label: 'Typ',       editable: false }
   ],
   payments: [
-    { key: 'id',               label: 'ID',       editable: false },
-    { key: 'user_id',          label: 'User-ID',  editable: false },
-    { key: 'photo_id',         label: 'Foto-ID',  editable: false },
-    { key: 'amount',           label: 'Betrag',   editable: true  },
-    { key: 'payment_provider', label: 'Provider', editable: false },
-    { key: 'payment_status',   label: 'Status',   editable: true  },
-    { key: 'paid_at',          label: 'Bezahlt am',editable: false }
+    { key: 'id',               label: 'ID',          editable: false },
+    { key: 'user_id',          label: 'User-ID',     editable: false },
+    { key: 'photo_id',         label: 'Foto-ID',     editable: false },
+    { key: 'photo_ids',        label: 'Foto-IDs',    editable: false },
+    { key: 'amount',           label: 'Betrag',      editable: true  },
+    { key: 'purchase_type',    label: 'Typ',         editable: false },
+    { key: 'payment_provider', label: 'Provider',    editable: false },
+    { key: 'payment_status',   label: 'Status',      editable: true  },
+    { key: 'paid_at',          label: 'Bezahlt am',  editable: false }
   ],
   galleries: [
     { key: 'id',         label: 'ID',       editable: false },
@@ -135,7 +138,7 @@ export default function AdminDashboard() {
         <h2 className="flex items-center text-2xl font-semibold text-gray-700 mb-4">
           <Folder className="mr-2 h-6 w-6 text-blue-600" /> Neue Galerie anlegen
         </h2>
-        <form onSubmit={createGallery} className="space-y-4">
+        <form onSubmit={createGallery} className="space-y-4 max-w-md">
           <div>
             <label className="block mb-1 text-gray-600">User-ID</label>
             <input
@@ -170,7 +173,7 @@ export default function AdminDashboard() {
         <h2 className="flex items-center text-2xl font-semibold text-gray-700 mb-4">
           <ImageIcon className="mr-2 h-6 w-6 text-blue-600" /> Foto hochladen
         </h2>
-        <form onSubmit={uploadPhoto} className="space-y-4">
+        <form onSubmit={uploadPhoto} className="space-y-4 max-w-md">
           <div>
             <label className="block mb-1 text-gray-600">Galerie-ID</label>
             <input
@@ -255,7 +258,7 @@ export default function AdminDashboard() {
   );
 }
 
-// Kleine Komponente für KPI-Karten
+// KPI-Karte
 function StatCard({ icon, label, value }) {
   return (
     <div className="bg-white p-6 rounded-2xl shadow flex items-center space-x-4">
@@ -268,20 +271,31 @@ function StatCard({ icon, label, value }) {
   );
 }
 
-// Collapsible Table
+// Wiederverwendbare, einklappbare Tabelle mit Sortierung nach ID
 function CollapsibleTable({ icon, title, data, columns, apiPath, reload }) {
-  const [open, setOpen]     = useState(false);
-  const [search, setSearch] = useState('');
-  const [page, setPage]     = useState(1);
-  const [editId, setEditId] = useState(null);
-  const [editData, setEditData] = useState({});
+  const [open,      setOpen]      = useState(false);
+  const [search,    setSearch]    = useState('');
+  const [sortAsc,   setSortAsc]   = useState(true);
+  const [page,      setPage]      = useState(1);
+  const [editId,    setEditId]    = useState(null);
+  const [editData,  setEditData]  = useState({});
   const pageSize = 10;
 
-  const filtered = data.filter(row =>
-    columns.some(c => String(row[c.key]).toLowerCase().includes(search.toLowerCase()))
+  // 1) sortieren
+  const sorted = [...data].sort((a, b) =>
+    sortAsc ? a.id - b.id : b.id - a.id
   );
+
+  // 2) filtern
+  const filtered = sorted.filter(row =>
+    columns.some(c =>
+      String(row[c.key] ?? '').toLowerCase().includes(search.toLowerCase())
+    )
+  );
+
+  // 3) paginieren
   const pageCount = Math.ceil(filtered.length / pageSize);
-  const pageRows  = filtered.slice((page-1)*pageSize, page*pageSize);
+  const pageRows  = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const base = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/admin`;
 
@@ -293,8 +307,7 @@ function CollapsibleTable({ icon, title, data, columns, apiPath, reload }) {
 
   const handleEdit = id => {
     setEditId(id);
-    const row = data.find(r => r.id === id);
-    setEditData({ ...row });
+    setEditData(data.find(r => r.id === id));
   };
 
   const handleSave = async () => {
@@ -315,20 +328,37 @@ function CollapsibleTable({ icon, title, data, columns, apiPath, reload }) {
       >
         <div className="flex items-center">
           {icon}
-          <span className="font-semibold text-gray-700">{title}</span>
+          <span className="font-semibold text-gray-700 ml-2">{title}</span>
         </div>
         <span className="text-gray-500">{open ? '▲' : '▼'}</span>
       </button>
 
       {open && (
         <div className="p-4">
-          <input
-            type="text"
-            placeholder="Suchen…"
-            value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1); }}
-            className="mb-4 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-200"
-          />
+          {/* Suche + Sortieren */}
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 space-y-2 sm:space-y-0">
+            <input
+              type="text"
+              placeholder="Suchen…"
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+              className="w-full sm:w-1/2 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-200"
+            />
+            <div className="space-x-2">
+              <button
+                onClick={() => { setSortAsc(true); setPage(1); }}
+                className={`px-2 py-1 rounded ${sortAsc ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              >
+                ID ↑
+              </button>
+              <button
+                onClick={() => { setSortAsc(false); setPage(1); }}
+                className={`px-2 py-1 rounded ${!sortAsc ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              >
+                ID ↓
+              </button>
+            </div>
+          </div>
 
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
@@ -347,7 +377,7 @@ function CollapsibleTable({ icon, title, data, columns, apiPath, reload }) {
                   <tr key={row.id} className="hover:bg-gray-50">
                     {columns.map(c => (
                       <td key={c.key} className="border-b px-4 py-2 text-gray-700">
-                        {String(row[c.key])}
+                        {Array.isArray(row[c.key]) ? row[c.key].join(', ') : String(row[c.key] ?? '')}
                       </td>
                     ))}
                     <td className="border-b px-4 py-2 space-x-2">
@@ -377,6 +407,7 @@ function CollapsibleTable({ icon, title, data, columns, apiPath, reload }) {
             </table>
           </div>
 
+          {/* Pagination */}
           {pageCount > 1 && (
             <div className="flex justify-center gap-4 mt-4">
               <button
@@ -397,6 +428,7 @@ function CollapsibleTable({ icon, title, data, columns, apiPath, reload }) {
             </div>
           )}
 
+          {/* Edit-Modal */}
           {editId && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
               <div className="bg-white p-6 rounded-2xl shadow-lg w-full max-w-lg">
