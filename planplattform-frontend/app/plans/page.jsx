@@ -97,7 +97,7 @@ export default function PlansPage() {
     )
   }, [searchPhoto, photos])
 
-  // Einzel-Download mit Bezahl-Logik
+  // Einzel-Download mit Bezahl-Logik (original zurückgebaut)
   const handleDownload = async photoId => {
     const token = localStorage.getItem('token')
     setLoadingPhotoId(photoId)
@@ -120,7 +120,7 @@ export default function PlansPage() {
         if (data.kostenpflichtig) {
           if (
             confirm(
-              'Dieser Plan ist bereits heruntergeladen. Für erneute Downloads ist eine Zahlung erforderlich. Jetzt bezahlen?'
+              'Zum erneuten Download ist eine Zahlung erforderlich. Jetzt kaufen?'
             )
           ) {
             await handlePurchase(photoId)
@@ -136,7 +136,7 @@ export default function PlansPage() {
     }
   }
 
-  // Einzel-Kauf
+  // Einzel-Kauf (original)
   const handlePurchase = async photoId => {
     const token = localStorage.getItem('token')
     const res = await fetch(
@@ -147,7 +147,7 @@ export default function PlansPage() {
       }
     )
     if (res.ok) {
-      alert('Zahlung erfolgreich. Starte Download …')
+      alert('Kauf erfolgreich–starte Download …')
       await handleDownload(photoId)
     } else {
       const data = await res.json()
@@ -155,57 +155,56 @@ export default function PlansPage() {
     }
   }
 
-  // Bulk-Kauf + Bulk-Download
-const handleBulkDownload = async () => {
-  if (selectedPhotos.length === 0) return;
-  const sum = (selectedPhotos.length * 1.99).toFixed(2);
-  if (!confirm(`Gesamtbetrag: €${sum} für ${selectedPhotos.length} Pläne. Jetzt bezahlen?`))
-    return;
+  // Bulk-Kauf + Bulk-Download bleibt unverändert
+  const handleBulkDownload = async () => {
+    if (selectedPhotos.length === 0) return
+    const sum = (selectedPhotos.length * 1.99).toFixed(2)
+    if (!confirm(`Gesamtbetrag: €${sum} für ${selectedPhotos.length} Pläne. Jetzt bezahlen?`))
+      return
 
-  setBulkLoading(true);
-  const token = localStorage.getItem('token');
+    setBulkLoading(true)
+    const token = localStorage.getItem('token')
 
-  // 1) Bulk-Kauf
-  const payRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/purchase/bulk`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
-    },
-    body: JSON.stringify({ photoIds: selectedPhotos })
-  });
-  if (!payRes.ok) {
-    setBulkLoading(false);
-    alert('Bulk-Kauf fehlgeschlagen');
-    return;
+    // Bulk-Kauf
+    const payRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/purchase/bulk`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ photoIds: selectedPhotos })
+    })
+    if (!payRes.ok) {
+      setBulkLoading(false)
+      alert('Bulk-Kauf fehlgeschlagen')
+      return
+    }
+
+    // Bulk-Download (ZIP)
+    const dlRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/download/bulk`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ photoIds: selectedPhotos })
+    })
+    if (!dlRes.ok) {
+      setBulkLoading(false)
+      alert('Bulk-Download fehlgeschlagen')
+      return
+    }
+    const blob = await dlRes.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'bulk_download.zip'
+    document.body.append(a)
+    a.click()
+    a.remove()
+
+    setBulkLoading(false)
   }
-
-  // 2) Bulk-Download (ZIP)
-  const dlRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/download/bulk`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
-    },
-    body: JSON.stringify({ photoIds: selectedPhotos })
-  });
-  if (!dlRes.ok) {
-    setBulkLoading(false);
-    alert('Bulk-Download fehlgeschlagen');
-    return;
-  }
-  const blob = await dlRes.blob();
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = 'bulk_download.zip';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  setBulkLoading(false);
-};
-
 
   if (!user) {
     return <p className="p-8 text-gray-600">Lade …</p>
@@ -215,12 +214,8 @@ const handleBulkDownload = async () => {
     <div className="bg-gray-50 min-h-screen p-8 space-y-6">
       {/* Breadcrumb */}
       <nav className="flex items-center text-gray-600 space-x-1">
-        <Link
-          href="/profile"
-          className="hover:text-blue-600 flex items-center"
-        >
-          <User className="h-4 w-4 mr-1" />
-          Profil
+        <Link href="/profile" className="hover:text-blue-600 flex items-center">
+          <User className="h-4 w-4 mr-1" /> Profil
         </Link>
         <ChevronRight className="h-4 w-4" />
         {selectedGallery ? (
@@ -291,7 +286,7 @@ const handleBulkDownload = async () => {
       {/* Foto-Bereich */}
       {selectedGallery && (
         <>
-          {/* Foto-Suche + Bulk */}
+          {/* Suche + Bulk & Zähler */}
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="relative text-gray-600 mb-4 w-full sm:w-auto">
               <Search className="absolute top-2 left-3 h-4 w-4" />
@@ -304,16 +299,22 @@ const handleBulkDownload = async () => {
                            focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
             </div>
+
             {selectedPhotos.length > 0 && (
-              <button
-                onClick={handleBulkDownload}
-                disabled={bulkLoading}
-                className="flex items-center px-4 py-2 bg-gray-800 text-white
-                           rounded-lg hover:bg-gray-900 transition disabled:opacity-50"
-              >
-                <DownloadCloud className="h-5 w-5 mr-2" />
-                {bulkLoading ? 'Bezahlvorgang …' : 'Bulk herunterladen'}
-              </button>
+              <div className="flex items-center space-x-3">
+                <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded">
+                  {selectedPhotos.length} ausgewählt
+                </span>
+                <button
+                  onClick={handleBulkDownload}
+                  disabled={bulkLoading}
+                  className="flex items-center px-4 py-2 bg-gray-800 text-white
+                             rounded-lg hover:bg-gray-900 transition disabled:opacity-50"
+                >
+                  <DownloadCloud className="h-5 w-5 mr-2" />
+                  {bulkLoading ? 'Bezahlvorgang …' : 'Herunterladen'}
+                </button>
+              </div>
             )}
           </div>
 
@@ -364,10 +365,7 @@ const handleBulkDownload = async () => {
 
                 {/* Info-Popup */}
                 {menuOpenId === photo.id && (
-                  <div
-                    className="absolute top-2 right-2 bg-white border border-gray-200
-                                  rounded-lg shadow-lg z-10 text-sm p-2 space-y-1"
-                  >
+                  <div className="absolute top-2 right-2 bg-white border-gray-200 rounded-lg shadow-lg z-10 text-sm p-2 space-y-1">
                     <div className="text-gray-700">
                       <strong>Dateiname:</strong> {photo.filename}
                     </div>
@@ -389,9 +387,7 @@ const handleBulkDownload = async () => {
                   <button
                     onClick={() => handleDownload(photo.id)}
                     disabled={loadingPhotoId === photo.id}
-                    className="w-full flex justify-center items-center
-                               px-3 py-2 bg-blue-600 text-white rounded-lg
-                               hover:bg-blue-700 transition disabled:opacity-50"
+                    className="w-full flex justify-center items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
                   >
                     {loadingPhotoId === photo.id
                       ? 'Bitte warten …'

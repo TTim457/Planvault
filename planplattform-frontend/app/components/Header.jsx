@@ -31,9 +31,7 @@ export default function Header() {
           </motion.h1>
         </Link>
         <nav className="space-x-4">
-          <Link href="/dashboard" className="text-gray-700 hover:text-blue-500">
-            Dashboard
-          </Link>
+          
           <Link href="/profile" className="text-gray-700 hover:text-blue-500">
             Profil
           </Link>

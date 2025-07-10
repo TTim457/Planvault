@@ -856,3 +856,203 @@ app.get('/my-photos', authMiddleware, async (req, res) => {
 });
 
 
+/* -------------------------------------------------- */
+
+// ★★ Settings Endpoints ★★
+
+/**
+ * GET /settings
+ * Holt den aktuellen 2FA- und E-Mail-Notif-Status
+ */
+app.get('/settings', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const result = await pool.query(
+      `SELECT two_fa_enabled, email_notifications_enabled
+       FROM users
+       WHERE id = $1`,
+      [userId]
+    );
+    const row = result.rows[0] || {};
+    res.json({
+      twoFA: Boolean(row.two_fa_enabled),
+      emailNotifications: Boolean(row.email_notifications_enabled)
+    });
+  } catch (err) {
+    console.error('Fehler bei GET /settings:', err);
+    res.status(500).json({ success: false, error: 'Fehler beim Laden der Einstellungen' });
+  }
+});
+
+/**
+ * PUT /settings/profile
+ * Speichert Vorname, Nachname und E-Mail
+ */
+app.put('/settings/profile', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { first_name, last_name, email } = req.body;
+  if (!first_name || !last_name || !email) {
+    return res.status(400).json({ success: false, error: 'Alle Felder sind erforderlich' });
+  }
+  try {
+    await pool.query(
+      `UPDATE users
+         SET first_name = $1,
+             last_name  = $2,
+             email      = $3
+       WHERE id = $4`,
+      [first_name, last_name, email, userId]
+    );
+    res.json({ success: true, message: 'Profil aktualisiert' });
+  } catch (err) {
+    console.error('Fehler bei PUT /settings/profile:', err);
+    res.status(500).json({ success: false, error: 'Fehler beim Speichern des Profils' });
+  }
+});
+
+/**
+ * POST /settings/change-password
+ * Altes Passwort prüfen und auf neues ändern
+ * Body: { oldPw, newPw }
+ */
+app.post('/settings/change-password', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { oldPw, newPw } = req.body;
+  if (!oldPw || !newPw) {
+    return res.status(400).json({ success: false, error: 'Altes und neues Passwort erforderlich' });
+  }
+  try {
+    const result = await pool.query(
+      `SELECT password_hash FROM users WHERE id = $1`,
+      [userId]
+    );
+    const hash = result.rows[0]?.password_hash;
+    if (!hash || !(await bcrypt.compare(oldPw, hash))) {
+      return res.status(401).json({ success: false, error: 'Altes Passwort falsch' });
+    }
+    const newHash = await bcrypt.hash(newPw, 10);
+    await pool.query(
+      `UPDATE users SET password_hash = $1 WHERE id = $2`,
+      [newHash, userId]
+    );
+    res.json({ success: true, message: 'Passwort geändert' });
+  } catch (err) {
+    console.error('Fehler bei POST /settings/change-password:', err);
+    res.status(500).json({ success: false, error: 'Fehler beim Ändern des Passworts' });
+  }
+});
+
+/**
+ * POST /settings/2fa
+ * Schaltet 2-Faktor-Authentifizierung ein/aus
+ * Body: { enabled: boolean }
+ */
+app.post('/settings/2fa', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { enabled } = req.body;
+  try {
+    await pool.query(
+      `UPDATE users SET two_fa_enabled = $1 WHERE id = $2`,
+      [enabled === true, userId]
+    );
+    res.json({ success: true, twoFA: enabled === true });
+  } catch (err) {
+    console.error('Fehler bei POST /settings/2fa:', err);
+    res.status(500).json({ success: false, error: 'Fehler beim Setzen von 2FA' });
+  }
+});
+
+/**
+ * POST /settings/notifications
+ * Schaltet E-Mail-Benachrichtigungen ein/aus
+ * Body: { enabled: boolean }
+ */
+app.post('/settings/notifications', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { enabled } = req.body;
+  try {
+    await pool.query(
+      `UPDATE users SET email_notifications_enabled = $1 WHERE id = $2`,
+      [enabled === true, userId]
+    );
+    res.json({ success: true, emailNotifications: enabled === true });
+  } catch (err) {
+    console.error('Fehler bei POST /settings/notifications:', err);
+    res.status(500).json({ success: false, error: 'Fehler beim Setzen der Benachrichtigungen' });
+  }
+});
+
+// ── Settings-Status ────────────────────────────────────────────
+// GET /settings/status
+app.get('/settings/status', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const { rows } = await pool.query(
+      `SELECT two_fa_enabled, email_notifications_enabled
+       FROM users
+       WHERE id = $1`,
+      [userId]
+    );
+    const row = rows[0] || {};
+    res.json({
+      twoFA: Boolean(row.two_fa_enabled),
+      notif: Boolean(row.email_notifications_enabled)
+    });
+  } catch (err) {
+    console.error('Fehler bei GET /settings/status:', err);
+    res.status(500).json({ success: false, error: 'Fehler beim Laden der Einstellungen' });
+  }
+});
+
+// ── Profil updaten ─────────────────────────────────────────────
+// PUT /me
+app.put('/me', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { first_name, last_name, email } = req.body;
+  if (!first_name || !last_name || !email) {
+    return res.status(400).json({ success: false, message: 'Alle Felder sind erforderlich' });
+  }
+  try {
+    await pool.query(
+      `UPDATE users
+         SET first_name = $1,
+             last_name  = $2,
+             email      = $3
+       WHERE id = $4`,
+      [first_name, last_name, email, userId]
+    );
+    res.json({ success: true, message: 'Profil aktualisiert!' });
+  } catch (err) {
+    console.error('Fehler bei PUT /me:', err);
+    res.status(500).json({ success: false, message: 'Fehler beim Speichern des Profils' });
+  }
+});
+
+// ── Passwort ändern ────────────────────────────────────────────
+// POST /settings/password
+app.post('/settings/password', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { oldPw, newPw } = req.body;
+  if (!oldPw || !newPw) {
+    return res.status(400).json({ success: false, error: 'Altes und neues Passwort erforderlich' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT password_hash FROM users WHERE id = $1`,
+      [userId]
+    );
+    const hash = rows[0]?.password_hash;
+    if (!hash || !(await bcrypt.compare(oldPw, hash))) {
+      return res.status(401).json({ success: false, error: 'Altes Passwort falsch' });
+    }
+    const newHash = await bcrypt.hash(newPw, 10);
+    await pool.query(
+      `UPDATE users SET password_hash = $1 WHERE id = $2`,
+      [newHash, userId]
+    );
+    res.json({ success: true, message: 'Passwort geändert!' });
+  } catch (err) {
+    console.error('Fehler bei POST /settings/password:', err);
+    res.status(500).json({ success: false, error: 'Fehler beim Ändern des Passworts' });
+  }
+});

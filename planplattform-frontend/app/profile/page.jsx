@@ -1,67 +1,74 @@
-// app/profile/page.jsx
-'use client'
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+'use client';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   User,
   Folder,
   ShoppingCart,
   DownloadCloud,
   ChevronLeft,
-  ChevronRight
-} from 'lucide-react'
+  ChevronRight,
+  ArrowUp,
+  ArrowDown
+} from 'lucide-react';
 
 export default function ProfilePage() {
-  const router = useRouter()
-  const [user, setUser] = useState(null)
-  const [galleries, setGalleries] = useState([])
-  const [purchases, setPurchases] = useState([])
-  const [downloads, setDownloads] = useState([])
+  const router = useRouter();
+  const [user, setUser] = useState(null);
+  const [galleries, setGalleries] = useState([]);
+  const [purchases, setPurchases] = useState([]);
+  const [downloads, setDownloads] = useState([]);
 
-  const [openPurchases, setOpenPurchases] = useState(false)
-  const [openDownloads, setOpenDownloads] = useState(false)
+  const [openPurchases, setOpenPurchases] = useState(false);
+  const [openDownloads, setOpenDownloads] = useState(false);
 
-  const [searchPur, setSearchPur] = useState('')
-  const [pagePur, setPagePur] = useState(1)
-  const [searchDl, setSearchDl] = useState('')
-  const [pageDl, setPageDl] = useState(1)
+  const [searchPur, setSearchPur] = useState('');
+  const [pagePur, setPagePur] = useState(1);
+  const [sortAscPur, setSortAscPur] = useState(true);
 
-  const PAGE_SIZE = 10
+  const [searchDl, setSearchDl] = useState('');
+  const [pageDl, setPageDl] = useState(1);
+  const [sortAscDl, setSortAscDl] = useState(true);
+
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (!token) return router.push('/login')
+    const token = localStorage.getItem('token');
+    if (!token) return router.push('/login');
 
     const loadAll = async () => {
       // User
       const me = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/me`, {
         headers: { Authorization: `Bearer ${token}` }
-      })
-      if (!me.ok) { localStorage.removeItem('token'); return router.push('/login') }
-      const { user } = await me.json()
-      setUser(user)
+      });
+      if (!me.ok) {
+        localStorage.removeItem('token');
+        return router.push('/login');
+      }
+      const { user } = await me.json();
+      setUser(user);
 
       // Galerien
-      const resGal = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/galleries`)
-      const { galleries } = await resGal.json()
-      setGalleries(galleries.filter(g => g.user_id === user.id))
+      const resGal = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/galleries`);
+      const { galleries } = await resGal.json();
+      setGalleries(galleries.filter(g => g.user_id === user.id));
 
-      // Dashboard-Data für Käufe
+      // Dashboard-Käufe
       const resDash = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard-data`, {
         headers: { Authorization: `Bearer ${token}` }
-      })
+      });
       if (resDash.ok) {
-        const { purchases } = await resDash.json()
-        setPurchases(purchases)
+        const { purchases } = await resDash.json();
+        setPurchases(purchases);
       }
 
-      // Downloads + Foto-Titel mappen
-      const resDl = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/downloads`)
-      const { downloads } = await resDl.json()
-      const resPhotos = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/photos`)
-      const { photos } = await resPhotos.json()
-      const titleMap = Object.fromEntries(photos.map(p => [p.id, p.title]))
+      // Downloads + Titel mappen
+      const resDl = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/downloads`);
+      const { downloads } = await resDl.json();
+      const resPhotos = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin/photos`);
+      const { photos } = await resPhotos.json();
+      const titleMap = Object.fromEntries(photos.map(p => [p.id, p.title]));
       setDownloads(
         downloads
           .filter(d => d.user_id === user.id)
@@ -70,29 +77,39 @@ export default function ProfilePage() {
             title: titleMap[d.photo_id] || `Foto ${d.photo_id}`,
             downloaded_at: d.downloaded_at
           }))
-      )
-    }
+      );
+    };
 
-    loadAll()
-  }, [router])
+    loadAll();
+  }, [router]);
 
-  if (!user) return <p className="p-8 text-gray-600">Lade Profil…</p>
+  if (!user) return <p className="p-8 text-gray-600">Lade Profil…</p>;
 
-  // Käufe filtern + paginieren
+  // Käufe filtern, sortieren, paginieren
   const filteredPur = purchases.filter(p =>
     p.title.toLowerCase().includes(searchPur.toLowerCase()) ||
     new Date(p.paid_at).toLocaleDateString().includes(searchPur)
-  )
-  const totalPagesPur = Math.ceil(filteredPur.length / PAGE_SIZE)
-  const pageItemsPur = filteredPur.slice((pagePur - 1) * PAGE_SIZE, pagePur * PAGE_SIZE)
+  );
+  const sortedPur = [...filteredPur].sort((a, b) =>
+    sortAscPur
+      ? new Date(a.paid_at) - new Date(b.paid_at)
+      : new Date(b.paid_at) - new Date(a.paid_at)
+  );
+  const totalPagesPur = Math.ceil(sortedPur.length / PAGE_SIZE);
+  const pageItemsPur = sortedPur.slice((pagePur - 1) * PAGE_SIZE, pagePur * PAGE_SIZE);
 
-  // Downloads filtern + paginieren
+  // Downloads filtern, sortieren, paginieren
   const filteredDl = downloads.filter(d =>
     d.title.toLowerCase().includes(searchDl.toLowerCase()) ||
     new Date(d.downloaded_at).toLocaleString().includes(searchDl)
-  )
-  const totalPagesDl = Math.ceil(filteredDl.length / PAGE_SIZE)
-  const pageItemsDl = filteredDl.slice((pageDl - 1) * PAGE_SIZE, pageDl * PAGE_SIZE)
+  );
+  const sortedDl = [...filteredDl].sort((a, b) =>
+    sortAscDl
+      ? new Date(a.downloaded_at) - new Date(b.downloaded_at)
+      : new Date(b.downloaded_at) - new Date(a.downloaded_at)
+  );
+  const totalPagesDl = Math.ceil(sortedDl.length / PAGE_SIZE);
+  const pageItemsDl = sortedDl.slice((pageDl - 1) * PAGE_SIZE, pageDl * PAGE_SIZE);
 
   return (
     <div className="bg-gray-50 min-h-screen p-8 space-y-6">
@@ -138,12 +155,28 @@ export default function ProfilePage() {
         </button>
         {openPurchases && (
           <div className="p-6 space-y-4">
+            {/* Sortier-Buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setSortAscPur(true); setPagePur(1); }}
+                className={`flex items-center px-3 py-1 rounded ${sortAscPur ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              >
+                <ArrowUp className="h-4 w-4 mr-1" /> Datum ↑
+              </button>
+              <button
+                onClick={() => { setSortAscPur(false); setPagePur(1); }}
+                className={`flex items-center px-3 py-1 rounded ${!sortAscPur ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              >
+                <ArrowDown className="h-4 w-4 mr-1" /> Datum ↓
+              </button>
+            </div>
+
             {/* Suche */}
             <input
               type="text"
               placeholder="Suche…"
               value={searchPur}
-              onChange={e => { setSearchPur(e.target.value); setPagePur(1) }}
+              onChange={e => { setSearchPur(e.target.value); setPagePur(1); }}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-200"
             />
 
@@ -200,12 +233,28 @@ export default function ProfilePage() {
         </button>
         {openDownloads && (
           <div className="p-6 space-y-4">
+            {/* Sortier-Buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setSortAscDl(true); setPageDl(1); }}
+                className={`flex items-center px-3 py-1 rounded ${sortAscDl ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              >
+                <ArrowUp className="h-4 w-4 mr-1" /> Datum ↑
+              </button>
+              <button
+                onClick={() => { setSortAscDl(false); setPageDl(1); }}
+                className={`flex items-center px-3 py-1 rounded ${!sortAscDl ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              >
+                <ArrowDown className="h-4 w-4 mr-1" /> Datum ↓
+              </button>
+            </div>
+
             {/* Suche */}
             <input
               type="text"
               placeholder="Suche…"
               value={searchDl}
-              onChange={e => { setSearchDl(e.target.value); setPageDl(1) }}
+              onChange={e => { setSearchDl(e.target.value); setPageDl(1); }}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-200"
             />
 
@@ -248,5 +297,5 @@ export default function ProfilePage() {
         )}
       </section>
     </div>
-  )
+  );
 }
