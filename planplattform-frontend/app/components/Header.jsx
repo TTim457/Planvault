@@ -9,7 +9,7 @@ export default function Header() {
   const path = usePathname();
   const [loggedIn, setLoggedIn] = useState(false);
 
-  // Bei jedem Routenwechsel prüfen wir das Token
+  // Token prüfen bei jedem Route-Wechsel
   useEffect(() => {
     setLoggedIn(!!localStorage.getItem('token'));
   }, [path]);
@@ -33,6 +33,12 @@ export default function Header() {
         <nav className="space-x-4">
           <Link href="/dashboard" className="text-gray-700 hover:text-blue-500">
             Dashboard
+          </Link>
+          <Link href="/profile" className="text-gray-700 hover:text-blue-500">
+            Profil
+          </Link>
+          <Link href="/settings" className="text-gray-700 hover:text-blue-500">
+            Einstellungen
           </Link>
           <Link href="/plans" className="text-gray-700 hover:text-blue-500">
             Pläne

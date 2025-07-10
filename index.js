@@ -240,7 +240,13 @@ app.get('/admin/photos', async (req, res) => {
 app.get('/admin/downloads', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, user_id, photo_id, downloaded_at, bezahlt
+      `SELECT
+         id,
+         user_id,
+         photo_id,
+         downloaded_at,
+         bezahlt,
+         purchase_type
        FROM downloads
        ORDER BY downloaded_at DESC`
     );
@@ -259,11 +265,22 @@ app.get('/admin/downloads', async (req, res) => {
 app.get('/admin/payments', async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, user_id, photo_id, amount, payment_provider, payment_status, paid_at FROM payments ORDER BY id ASC'
+      `SELECT
+         id,
+         user_id,
+         photo_id,
+         photo_ids,
+         amount,
+         purchase_type,
+         payment_provider,
+         payment_status,
+         paid_at
+       FROM payments
+       ORDER BY id ASC`
     );
     res.json({ success: true, payments: result.rows });
   } catch (error) {
-    console.error(error);
+    console.error('Fehler bei /admin/payments:', error);
     res.status(500).json({ success: false, error: 'Fehler beim Laden der Zahlungen' });
   }
 });
@@ -472,7 +489,9 @@ app.get('/download/:photoId', authMiddleware, async (req, res) => {
    // 4️⃣ Kostenloser erster Download?
 if (usedDownloads === 0) {
   await pool.query(
-    `INSERT INTO downloads (user_id, photo_id, bezahlt) VALUES ($1,$2,false)`,
+    `INSERT INTO downloads
+       (user_id, photo_id, bezahlt, downloaded_at, purchase_type)
+     VALUES ($1, $2, false, NOW(), 'single')`,
     [userId, photoId]
   );
   return res.download(filename, filename, { root: uploadDir }, err => {
@@ -483,7 +502,9 @@ if (usedDownloads === 0) {
 // 5️⃣ Bezahlte Downloads erlauben (pro Zahlung 1 Download)
 if (usedDownloads < paidCount + 1) {
   await pool.query(
-    `INSERT INTO downloads (user_id, photo_id, bezahlt) VALUES ($1,$2,true)`,
+    `INSERT INTO downloads
+       (user_id, photo_id, bezahlt, downloaded_at, purchase_type)
+     VALUES ($1, $2, true, NOW(), 'single')`,
     [userId, photoId]
   );
   return res.download(filename, filename, { root: uploadDir }, err => {
@@ -507,46 +528,132 @@ if (usedDownloads < paidCount + 1) {
 });
 
 
+/* -------------------------------------------------- */
+
+const archiver = require('archiver');
+
+// ── Bulk-Download & Logbuch ──────────────────────────────────────────
+app.post('/download/bulk', authMiddleware, express.json(), async (req, res) => {
+  const { photoIds } = req.body;
+  const userId       = req.user.id;
+
+  if (!Array.isArray(photoIds) || photoIds.length === 0) {
+    return res.status(400).json({ success: false, message: 'Keine Fotos ausgewählt' });
+  }
+
+  try {
+    // 1) Ownership-Check: nur Deine Galerie-Fotos
+    const { rows: valid } = await pool.query(
+      `SELECT p.id, p.filename
+         FROM photos p
+         JOIN galleries g ON p.gallery_id = g.id
+        WHERE g.user_id = $1
+          AND p.id = ANY($2::int[])`,
+      [userId, photoIds]
+    );
+    if (valid.length === 0) {
+      return res.status(403).json({ success: false, message: 'Keine Zugriffsrechte' });
+    }
+
+    // 2) Downloads protokollieren (je Foto ein Eintrag)
+    await pool.query(
+      `INSERT INTO downloads
+         (user_id, photo_id, bezahlt, downloaded_at, purchase_type)
+       SELECT
+         $1,             -- user_id
+         unnest($2::int[]), -- photo_id
+         TRUE,           -- bezahlt (bulk-Download zählt als bezahlt)
+         NOW(),          -- downloaded_at
+         'bulk'          -- purchase_type
+      `,
+      [userId, valid.map(r => r.id)]
+    );
+
+    // 3) ZIP-Stream aufbauen
+    res.attachment('bulk_download.zip');
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.pipe(res);
+    valid.forEach(photo => {
+      const filePath = path.join(uploadDir, photo.filename);
+      archive.file(filePath, { name: photo.filename });
+    });
+    await archive.finalize();
+
+  } catch (err) {
+    console.error('Bulk-Download-Error:', err);
+    res.status(500).json({ success: false, message: 'Bulk-Download fehlgeschlagen' });
+  }
+});
+
 
 
 
 /* -------------------------------------------------- */
 
-// Purchase
-app.post('/purchase/:photoId', authMiddleware, async (req, res) => {
-  const { photoId } = req.params;
-  const userId = req.user.id;
-  const amount = 1.99;
-  const paymentProvider = 'manual';
+// ── Bulk-Kauf ───────────────────────────────────────────
+app.post('/purchase/bulk', authMiddleware, express.json(), async (req, res) => {
+  const { photoIds } = req.body;            // Array von Photo-IDs
+  const userId       = req.user.id;
+  const pricePer     = 1.99;
+
+  if (!Array.isArray(photoIds) || photoIds.length === 0) {
+    return res.status(400).json({ success: false, message: 'Keine Fotos ausgewählt' });
+  }
+
+  // Gesamtbetrag
+  const total = parseFloat((photoIds.length * pricePer).toFixed(2));
 
   try {
-    // Foto-Zugriff prüfen (optional aber empfohlen)
+    // Einen einzigen Eintrag in payments
+    const result = await pool.query(
+      `INSERT INTO payments
+         (user_id,      photo_ids,         amount,       payment_provider, purchase_type, payment_status, paid_at)
+       VALUES
+         ($1,           $2::int[],         $3,          'manual',         'bulk',        'paid',         NOW())
+       RETURNING id`,
+      [ userId, photoIds, total ]
+    );
+
+    res.json({ success: true, message: 'Bulk-Kauf erfolgreich', paymentId: result.rows[0].id });
+  } catch (err) {
+    console.error('Bulk Purchase Error:', err);
+    res.status(500).json({ success: false, message: 'Bulk-Kauf fehlgeschlagen' });
+  }
+});
+
+// ── Einzel-Kauf ─────────────────────────────────────────
+app.post('/purchase/:photoId', authMiddleware, async (req, res) => {
+  const { photoId } = req.params;
+  const userId      = req.user.id;
+  const amount      = 1.99;
+
+  try {
+    // 1) Ownership-Check
     const photoRes = await pool.query(`
       SELECT p.filename
       FROM photos p
       JOIN galleries g ON p.gallery_id = g.id
       WHERE p.id = $1 AND g.user_id = $2
-    `, [photoId, userId]);
+    `, [ photoId, userId ]);
 
-    if (photoRes.rows.length === 0) {
-      return res.status(403).json({ success: false, message: 'Kein Zugriff auf dieses Foto' });
+    if (!photoRes.rows.length) {
+      return res.status(403).json({ success:false, message:'Kein Zugriff auf dieses Foto' });
     }
 
-    // 💳 Zahlung eintragen (mehrfache Käufe jetzt erlaubt)
+    // 2) Einen einzigen Eintrag in payments
     await pool.query(`
-      INSERT INTO payments (user_id, photo_id, amount, payment_provider, payment_status, paid_at)
-      VALUES ($1, $2, $3, $4, 'paid', NOW())
-    `, [userId, photoId, amount, paymentProvider]);
+      INSERT INTO payments
+        (user_id, photo_id, amount, payment_provider, purchase_type, payment_status, paid_at)
+      VALUES
+        ($1,      $2,       $3,     'manual',         'single',     'paid',         NOW())
+    `, [ userId, photoId, amount ]);
 
-    console.log(`💰 Zahlung gespeichert für User ${userId} → Photo ${photoId}`);
-    res.json({ success: true, message: 'Zahlung erfolgreich durchgeführt. Du kannst jetzt herunterladen.' });
-
+    res.json({ success:true, message:'Einzel-Kauf erfolgreich' });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, error: 'Fehler beim Kauf' });
+    res.status(500).json({ success:false, error:'Fehler beim Kauf' });
   }
 });
-
 
 
 
@@ -662,7 +769,7 @@ app.get('/me', authMiddleware, (req, res) => {
 
 // 🔹 Dashboard-Daten: Gekaufte Pläne + letzter Download
 app.get('/dashboard-data', authMiddleware, async (req, res) => {
-  const userId = req.user.Id;
+  const userId = req.user.id;
 
   try {
     const purchases = await pool.query(`
@@ -695,6 +802,26 @@ app.get('/dashboard-data', authMiddleware, async (req, res) => {
 
 /* -------------------------------------------------- */
 
+// 👥 Eigene Galerien abrufen
+app.get('/my-galleries', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const result = await pool.query(
+      `SELECT id, title, created_at
+       FROM galleries
+       WHERE user_id = $1
+       ORDER BY created_at DESC`,
+      [userId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Fehler bei /my-galleries:', err);
+    res.status(500).json({ message: 'Fehler beim Abrufen der Galerien' });
+  }
+});
+
+/* -------------------------------------------------- */
+
 // 📸 Eigene Fotos abrufen (nur aus Galerien des Users)
 app.get('/my-photos', authMiddleware, async (req, res) => {
   const userId = req.user.id;
@@ -702,7 +829,8 @@ app.get('/my-photos', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT 
-        photos.id, 
+        photos.id,
+        photos.gallery_id, 
         photos.title, 
         photos.file_url, 
         photos.uploaded_at, 
